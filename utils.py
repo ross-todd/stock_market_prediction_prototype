@@ -1,23 +1,29 @@
-# utils.py — Helpers Layer
+#  Ross Todd
+#  BSc (Hons) Software Development
+#  Honours Project 2026
+#  ARIMA model — walk-forward validation and 5-day forecast for BARC, LLOY, HSBA
+
+# # utils.py — Helpers Layer
 # Constants, colours, date calculations, and custom styling
 
 from datetime import datetime
 from pandas.tseries.offsets import BDay
 
 
-# ── Ticker Constants ──────────────────────────────────────────────────────────
+# ── Ticker Constants ───────────────────────────────────
 
 TICKERS = {
-    "Barclays plc":               "BARC.L",
-    "HSBC Holdings plc":          "HSBA.L",
-    "Lloyds Banking Group plc":   "LLOY.L"
+    "Barclays Plc":             "BARC.L",
+    "HSBC Holdings Plc":        "HSBA.L",
+    "Lloyds Banking Group Plc": "LLOY.L"
 }
 
 TICKER_LIST     = list(TICKERS.values())
-COMPANY_OPTIONS = ["All Companies"] + list(TICKERS.keys())
+TICKER_NAMES    = list(TICKERS.keys())
+COMPANY_OPTIONS = ["All Companies"] + TICKER_NAMES
 
 
-# ── Colour Constants ──────────────────────────────────────────────────────────
+# ── Colour Constants ───────────────────────────────────
 
 BANK_COLOR_MAP = {
     "BARC.L": "#0000FF",   # Barclays — blue
@@ -25,12 +31,18 @@ BANK_COLOR_MAP = {
     "LLOY.L": "#008000",   # Lloyds — green
 }
 
+MODEL_COLOR_MAP = {
+    "ARIMA":         "#9575CD",   # purple
+    "Random Forest": "#4FC3F7",   # light blue
+    "GRU":           "#F06292",   # pink
+}
 
-# ── Date Calculation ──────────────────────────────────────────────────────────
+
+# ── Date Calculation ──────────────────────────────────────────────────────────────────────────────
 
 # Returns a start date based on a preset range label
 def get_start_date_from_range(range_selection: str):
-    today = datetime.now()
+    today = datetime(2026, 2, 27)  # Fixed date to replicate the comparative analysis window exactly
     mapping = {
         '1D': BDay(1),
         '1W': BDay(5),
@@ -51,6 +63,20 @@ GLOBAL_CSS = """
     .stMainBlockContainer { padding-bottom: 0rem !important; }
     .stVerticalBlock { padding-bottom: 0rem !important; }
     .stPlotlyChart { margin-bottom: 0rem !important; }
+    div[data-testid="stSpinner"] {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+        background: white;
+        padding: 28px 36px;
+        border-radius: 14px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
 </style>
 """
 
@@ -80,6 +106,10 @@ DATE_RANGE_BUTTONS_CSS = """
         transition: none !important;
         font-weight: 400 !important;
     }
+    button[kind="secondary"]:hover {
+        background-color: #e0e2e6 !important;
+        border-color: #bbb !important;
+    }
     div[data-testid="column"] button {
         height: 38px !important;
         min-height: 38px !important;
@@ -98,3 +128,12 @@ DATE_RANGE_BUTTONS_CSS = """
 </style>
 """
 
+PREDICTIONS_CSS = """
+<style>
+    [data-testid="stMetric"] { padding: 2px 0 !important; }
+    [data-testid="stMetricValue"] { font-size: 28px !important; }
+    [data-testid="stMetricDelta"] { font-size: 12px !important; }
+    [data-testid="stMetricLabel"] { font-size: 16px !important; }
+    hr { margin: 4px 0 !important; }
+</style>
+"""
