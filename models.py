@@ -45,20 +45,19 @@ TRAINED_MODELS_DIR = os.path.join(os.path.dirname(__file__), 'trained_models')
 # in the comparative analysis.
 FORECAST_WEIGHTS = np.array([0.5, 0.2, 0.1, 0.1, 0.1])
 
-# ── Dissertation residual std values ─────────────────────────────────────────
-# Back-calculated from the uncertainty_metrics CSVs produced during the
-# comparative analysis using: residual_std = Avg_Interval_Width / (2 * 1.96)
-# These fixed values are used instead of recalculating at runtime so that
-# prediction interval widths in the application exactly match the dissertation.
+# ── Dissertation residual std values (log-return space) ──────────────────────
+# Extracted directly from the comparative analysis terminal output.
+# These are the final current_res_std values in log-return space used
+# at the point of forecast generation, ensuring PI widths match exactly.
 RF_RESIDUAL_STD = {
-    'BARC.L': 7.65708898,
-    'LLOY.L': 1.39292061,
-    'HSBA.L': 14.54121749,
+    'BARC.L': 0.0196572589,
+    'LLOY.L': 0.0158935703,
+    'HSBA.L': 0.0153867528,
 }
 GRU_RESIDUAL_STD = {
-    'BARC.L': 6.85584155,
-    'LLOY.L': 1.32069734,
-    'HSBA.L': 12.23937144,
+    'BARC.L': 0.0181549697,
+    'LLOY.L': 0.0156723814,
+    'HSBA.L': 0.0122015238,
 }
 
 
@@ -148,7 +147,6 @@ def _cached_arima(
     ci_upper        = last_price * np.exp(cumulative_log_returns + 1.96 * sigma_one_step * np.sqrt(horizons))
 
     return np.array(forecast_prices), pd.DataFrame({'lower': ci_lower, 'upper': ci_upper})
-
 
 # ══════════════════════════════════════════════════════════════════════════
 #   RANDOM FOREST — n_estimators=300, max_depth=8
@@ -339,10 +337,12 @@ def _cached_rf(
     cumulative_log_returns = np.cumsum(np.array(forecast_log_rets))
     horizons               = np.arange(1, 6)
     forecast_prices        = last_price * np.exp(cumulative_log_returns)
-    ci_lower               = forecast_prices - 1.96 * residual_std * np.sqrt(horizons)
-    ci_upper               = forecast_prices + 1.96 * residual_std * np.sqrt(horizons)
+    ci_lower = last_price * np.exp(cumulative_log_returns - 1.96 * residual_std * np.sqrt(horizons))
+    ci_upper = last_price * np.exp(cumulative_log_returns + 1.96 * residual_std * np.sqrt(horizons))
 
     return np.array(forecast_prices), pd.DataFrame({'lower': ci_lower, 'upper': ci_upper})
+
+    
 
 
 # ═══════════════════════════════════════════════════════════════════════════════════
@@ -406,8 +406,6 @@ def _cached_gru(
                   'Signal_Line', 'Upper_Band', 'Lower_Band', 'Log_Ret_Lag1']
     
     n_features = len(features) + 1
-
-    
 
     # ── Load scaler and scale input data ─────────────────────────────────
     # The scaler was fitted on training data only during the comparative
@@ -477,8 +475,8 @@ def _cached_gru(
     cumulative_log_returns = np.cumsum(np.array(forecast_log_rets))
     horizons               = np.arange(1, 6)
     forecast_prices        = last_price * np.exp(cumulative_log_returns)
-    ci_lower               = forecast_prices - 1.96 * real_residual_std * np.sqrt(horizons)
-    ci_upper               = forecast_prices + 1.96 * real_residual_std * np.sqrt(horizons)
+    ci_lower = last_price * np.exp(cumulative_log_returns - 1.96 * real_residual_std * np.sqrt(horizons))
+    ci_upper = last_price * np.exp(cumulative_log_returns + 1.96 * real_residual_std * np.sqrt(horizons))
 
     return np.array(forecast_prices), pd.DataFrame({'lower': ci_lower, 'upper': ci_upper})
 
