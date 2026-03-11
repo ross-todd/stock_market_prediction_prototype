@@ -9,7 +9,13 @@
 # Data is fetched once, cached for one hour, and cleaned consistently so
 # that any differences in model performance are attributable to the model
 # class itself rather than inconsistent input data.
+#
+# Updated: StockDataService now loads from the comparative analysis saved_data
+# cache (saved_data/TICKER_20210228_20260228.csv) before falling back to
+# yfinance. This ensures the app uses identical data to the dissertation,
+# eliminating any discrepancy caused by yfinance returning updated prices.
 
+import os
 import yfinance as yf
 import pandas as pd
 import streamlit as st
@@ -17,11 +23,69 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 
+# ── Saved data folder ─────────────────────────────────────────────────────────
+# Resolved relative to this file so the app finds saved_data regardless of
+# the working directory it is launched from.
+SAVED_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_data")
+
+# Fixed date window matching the comparative analysis exactly
+DATA_START = "2021-02-28"
+DATA_END   = "2026-02-28"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#   INTERNAL CACHE LOADER
+#   Attempts to load a single ticker from the saved_data CSV created by
+#   the comparative analysis (data_loader.py). The filename format is:
+#       BARC_L_20210228_20260228.csv
+#   If the file does not exist, falls back to downloading from yfinance
+#   and saves the result so future runs use the cached version.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _load_single_ticker(ticker: str) -> Optional[pd.DataFrame]:
+    ticker_clean = ticker.replace(".", "_")
+    start_clean  = DATA_START.replace("-", "")
+    end_clean    = DATA_END.replace("-", "")
+    cache_path   = os.path.join(SAVED_DATA_DIR,
+                                f"{ticker_clean}_{start_clean}_{end_clean}.csv")
+
+    if os.path.exists(cache_path):
+        df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+        df = df.sort_index()
+        return df
+
+    # Cache miss — download from yfinance and save for future runs
+    try:
+        os.makedirs(SAVED_DATA_DIR, exist_ok=True)
+        raw = yf.download(ticker, start=DATA_START, end=DATA_END,
+                          progress=False, auto_adjust=False)
+
+        if raw is None or raw.empty:
+            return None
+
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = raw.columns.get_level_values(0)
+
+        if 'Adj Close' not in raw.columns and 'Close' in raw.columns:
+            raw['Adj Close'] = raw['Close']
+
+        raw = raw.asfreq('B').ffill().bfill()
+        raw.to_csv(cache_path)
+        return raw
+
+    except Exception:
+        return None
+
+
 # ══════════════════════════════════════════════════════════════════════════
 #   STOCK DATA SERVICE
 #   Single entry point for all data retrieval in the application.
 #   Caching is applied at this layer to avoid repeated API calls across
 #   reruns — the TTL is set to 1 hour to balance freshness with performance.
+#
+#   get_stock_data now builds the combined DataFrame from individual cached
+#   CSV files rather than a single yfinance multi-ticker download, so the
+#   data is guaranteed to match the comparative analysis exactly.
 # ══════════════════════════════════════════════════════════════════════════
 
 class StockDataService:
@@ -30,49 +94,59 @@ class StockDataService:
     @st.cache_data(show_spinner=False, ttl=3600)
     def get_stock_data(tickers: list, start_date_str: str, end_date_str: str,
                        range_selection: str = None) -> Optional[pd.DataFrame]:
-
-        # ── Date window ───────────────────────────────────────────────────────
-        # Fixed to the same 2021–2026 window used in the comparative analysis
-        # so that the application forecasts are consistent with dissertation results.
-        # A 5-day buffer is applied before the start date to ensure data availability
-        # around weekends and UK bank holidays without losing valid trading days.
         try:
-            start_date = datetime.strptime("2021-02-28", '%Y-%m-%d')
-            end_date   = datetime.strptime("2026-02-28", '%Y-%m-%d')
-            end_date   = end_date + timedelta(days=1)
+            frames = {}
 
-            buffer_start_date = start_date - timedelta(days=5)
+            for ticker in tickers:
+                df = _load_single_ticker(ticker)
+                if df is not None and not df.empty:
+                    frames[ticker] = df
 
-            downloaded_data = yf.download(
-                tickers,
-                start=buffer_start_date.strftime('%Y-%m-%d'),
-                end=end_date.strftime('%Y-%m-%d'),
-                progress=False,
-                auto_adjust=False
-            )
-
-            if downloaded_data.empty:
+            if not frames:
                 return None
 
-            # ── Cleaning pipeline ─────────────────────────────────────────────
-            # Date column is converted to datetime and set as the index.
-            # All price and volume columns are converted to numeric — any values
-            # that cannot be parsed are replaced with NaN before gap-filling.
-            # Forward-fill followed by back-fill is used to handle missing trading
-            # days without introducing future prices into historical gaps.
-            df = downloaded_data.copy()
-            df = df.reset_index()
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            df = df[df['Date'].notna()]
-            df.set_index('Date', inplace=True)
+            if len(frames) == 1:
+                # Single ticker — return flat DataFrame matching original behaviour
+                ticker = list(frames.keys())[0]
+                result = frames[ticker].copy()
+                for col in result.columns:
+                    result[col] = pd.to_numeric(result[col], errors='coerce')
+                result.ffill(inplace=True)
+                result.bfill(inplace=True)
+                return result
 
-            for col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+            # Multiple tickers — build MultiIndex DataFrame matching yfinance output
+            # so the rest of the app (models.py _extract_series) works unchanged.
+            all_cols = set()
+            for df in frames.values():
+                all_cols.update(df.columns.tolist())
 
-            df.ffill(inplace=True)
-            df.bfill(inplace=True)
+            combined_index = frames[list(frames.keys())[0]].index
+            for df in frames.values():
+                combined_index = combined_index.union(df.index)
 
-            return df
+            multi_frames = {}
+            for col in all_cols:
+                col_data = {}
+                for ticker, df in frames.items():
+                    if col in df.columns:
+                        col_data[ticker] = df[col].reindex(combined_index)
+                if col_data:
+                    multi_frames[col] = pd.DataFrame(col_data)
+
+            result = pd.concat(multi_frames, axis=1)
+            result.columns = pd.MultiIndex.from_tuples(
+                [(col, ticker) for col in multi_frames for ticker in multi_frames[col].columns]
+            )
+            result = result.sort_index()
+
+            for col in result.columns:
+                result[col] = pd.to_numeric(result[col], errors='coerce')
+
+            result.ffill(inplace=True)
+            result.bfill(inplace=True)
+
+            return result
 
         except Exception:
             return None

@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 import sys
 import os
 
+import models
 sys.path.append(os.path.dirname(__file__))
 
 from utils import (
