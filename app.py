@@ -79,6 +79,25 @@ def scroll_to_top():
     )
 
 
+# ── Shared disclaimer helpers ─────────────────────────────────────────────────
+# Module-level functions so both HomeScreen and PredictionsScreen can call
+# the same rendering logic without duplicating st.warning calls.
+
+def render_data_disclaimer():
+    st.warning(
+        "**Data Source:** Stock price data is sourced from "
+        "[Yahoo Finance](https://finance.yahoo.com) via the yfinance library. "
+        "Data is for informational purposes only and may be subject to delays."
+    )
+
+def render_model_disclaimer():
+    st.warning(
+        "**Disclaimer:** This model is for educational purposes only. "
+        "Stock prices are influenced by many factors and can be unpredictable. "
+        "Seek professional financial advice before investing."
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════
 #   HOME SCREEN
 #   Displays the date range selector, interactive price chart, and
@@ -133,6 +152,7 @@ class HomeScreen:
         current_info = self._get_current_info(close_prices_df)
         self._render_chart(close_prices_df, current_info)
         self._render_data_table()
+        self._render_data_disclaimer()
 
     def _get_current_info(self, close_prices_df: pd.DataFrame) -> str:
         # ── Current price extraction ──────────────────────────────────────
@@ -335,6 +355,9 @@ class HomeScreen:
         except Exception as e:
             st.error(f"Could not load historical data table: {e}")
 
+    def _render_data_disclaimer(self):
+        render_data_disclaimer()
+
 
 # ══════════════════════════════════════════════════════════════════════════
 #   PREDICTIONS SCREEN
@@ -524,11 +547,7 @@ class PredictionsScreen:
                 else:
                     st.warning("One or more models failed — comparison unavailable.")
 
-            st.warning(
-                "**Disclaimer:** This model is for educational purposes only. "
-                "Stock prices are influenced by many factors and can be unpredictable. "
-                "Seek professional financial advice before investing."
-            )
+            render_model_disclaimer()
 
         except Exception as e:
             st.error(f"A critical error occurred while generating predictions: {e}")
@@ -892,15 +911,15 @@ if st.session_state['selected_company'] not in company_options_filtered:
     st.session_state['selected_company'] = company_options_filtered[0]
 
 if st.session_state['current_view'] == 'predictions':
-    if '_selected_company_for_predictions' not in st.session_state:
-        sel = st.session_state['selected_company']
-        if sel == "All Companies":
-            sel = [c for c in COMPANY_OPTIONS if c != "All Companies"][0]
-        st.session_state['_selected_company_for_predictions'] = sel
+    default_company = st.session_state.get('selected_company', company_options_filtered[0])
+    if default_company == "All Companies":
+        default_company = company_options_filtered[0]
+    default_index = company_options_filtered.index(default_company) if default_company in company_options_filtered else 0
 
     selected_company = st.sidebar.selectbox(
         "Select Company:",
         options=company_options_filtered,
+        index=default_index,
         key='_selected_company_for_predictions'
     )
 else:
@@ -941,7 +960,9 @@ if not dates_disabled and (
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Actions")
 
-if st.session_state['current_view'] != 'main':
+view = st.session_state.get('current_view', 'main')
+
+if view == 'predictions':
     if st.sidebar.button("🏠 Home", use_container_width=True):
         st.session_state['current_view'] = 'main'
         st.rerun()
@@ -950,13 +971,9 @@ if st.sidebar.button("📈 Predictions", use_container_width=True):
     st.session_state['current_view'] = 'predictions'
     if 'selected_model' not in st.session_state:
         st.session_state['selected_model'] = "ARIMA"
-    sel = st.session_state['selected_company']
-    if sel == "All Companies":
-        sel = [c for c in COMPANY_OPTIONS if c != "All Companies"][0]
-    st.session_state['_selected_company_for_predictions'] = sel
     st.rerun()
 
-if st.session_state['current_view'] == 'predictions':
+if view == 'predictions':
     st.sidebar.markdown("---")
     st.sidebar.selectbox(
         "Select Model",
