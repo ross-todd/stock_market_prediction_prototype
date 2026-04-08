@@ -1,6 +1,6 @@
 #  Ross Todd
 #  BSc (Hons) Software Development
-#  Honours Project 2026 - A Stock Market Prediction Application Prototype
+#  Honours Project 2026 - A Stock Market Prediction Application Prototype - Aligns with Comparative Analysis Results
 
 # # utils.py — Helpers Layer
 # Constants, colours, date calculations, and custom styling
