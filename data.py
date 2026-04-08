@@ -74,6 +74,7 @@ def _load_single_ticker(ticker: str) -> Optional[pd.DataFrame]:
         return raw
 
     except Exception:
+        # Silently fail to allow the higher-level service to handle the missing data error
         return None
 
 
